@@ -9,23 +9,24 @@ st.set_page_config(layout='wide', page_title='Dashboard de Vendas Online', page_
 @st.cache_data
 def load_data():
     try:
+        # Carrega o arquivo de amostra para otimização
         df = pd.read_csv('Online_Retail.csv', encoding='ISO-8859-1')
     except FileNotFoundError:
-        st.error('O arquivo Online_Retail.csv não foi encontrado. Certifique-se de que ele está no mesmo diretório do app.py.')
+        st.error('O arquivo Online_Retail_sample.csv não foi encontrado. Certifique-se de que ele está no mesmo diretório do app.py.')
         st.stop()
 
-    # Tratamento de valores nulos e conversão de tipos
+    # Tratamento de valores nulos e conversão de tipos (mantendo a lógica original)
     df['Description'].fillna('Unknown', inplace=True)
     df.dropna(subset=['CustomerID'], inplace=True)
     df['CustomerID'] = df['CustomerID'].astype(int)
-    
+
     # Tentativa de inferir o formato da data para maior robustez
     try:
-        df['InvoiceDate'] = pd.to_datetime(df['InvoiceDate'], format='%m/%d/%y %H:%M')
+        df['InvoiceDate'] = pd.to_datetime(df['InvoiceDate'], format='%Y-%m-%d %H:%M:%S', errors='coerce') # Ajuste do formato para o que é salvo no CSV
     except ValueError:
         df['InvoiceDate'] = pd.to_datetime(df['InvoiceDate'], errors='coerce')
         st.warning('Alguns valores de data não puderam ser convertidos com o formato esperado e foram tratados como NaT.')
-        df.dropna(subset=['InvoiceDate'], inplace=True) # Remover linhas com datas inválidas
+    df.dropna(subset=['InvoiceDate'], inplace=True) # Remover linhas com datas inválidas
 
     # Calcular Faturamento Final (Total Price)
     df['Faturamento Final'] = df['Quantity'] * df['UnitPrice']
@@ -33,7 +34,7 @@ def load_data():
     # Remover transações com quantidade ou preço unitário negativo/zero (devoluções/ajustes)
     df = df[df['Quantity'] > 0]
     df = df[df['UnitPrice'] > 0]
-    
+
     return df
 
 df = load_data()
@@ -55,14 +56,23 @@ paises_selecionados = st.sidebar.multiselect(
 # Aplicar filtro de país
 df_filtrado = df[df['Country'].isin(paises_selecionados)]
 
-# Slider para filtrar por data (opcional, adicionei para exemplo)
-min_date = df_filtrado['InvoiceDate'].min().to_pydatetime()
-max_date = df_filtrado['InvoiceDate'].max().to_pydatetime()
+# Slider para filtrar por data
+min_overall_date = df['InvoiceDate'].min().to_pydatetime()
+max_overall_date = df['InvoiceDate'].max().to_pydatetime()
+
+# Verificar se df_filtrado não está vazio antes de pegar min/max datas para o slider
+if not df_filtrado.empty:
+    min_filtered_date = df_filtrado['InvoiceDate'].min().to_pydatetime()
+    max_filtered_date = df_filtrado['InvoiceDate'].max().to_pydatetime()
+else:
+    min_filtered_date = min_overall_date
+    max_filtered_date = max_overall_date
+
 date_range = st.sidebar.date_input(
     'Selecione o Intervalo de Datas',
-    value=(min_date, max_date),
-    min_value=min_date,
-    max_value=max_date
+    value=(min_filtered_date, max_filtered_date),
+    min_value=min_overall_date,
+    max_value=max_overall_date
 )
 
 if len(date_range) == 2:
@@ -72,6 +82,10 @@ elif len(date_range) == 1:
     start_date = date_range[0]
     df_filtrado = df_filtrado[df_filtrado['InvoiceDate'].dt.date >= start_date]
 
+# --- Verificar se há dados após os filtros --- #
+if df_filtrado.empty:
+    st.warning('Nenhum dado encontrado para os filtros selecionados. Ajuste seus filtros.')
+    st.stop() # Interrompe a execução do restante do script do Streamlit
 
 # --- Indicador de Faturamento Total --- #
 total_faturamento = df_filtrado['Faturamento Final'].sum()
